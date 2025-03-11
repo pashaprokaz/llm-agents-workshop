@@ -24,7 +24,6 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 from tenacity import retry, stop_after_attempt, wait_fixed
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
 
 
 def printmd(string):
@@ -34,7 +33,7 @@ def printmd(string):
 def known_llms():
     return ["Qwen2.5-7B-Instruct", "Qwen2.5-32B-Instruct", "GigaChat MAX"]
 
-def init_db(docs):
+def init_db(docs, embeddings_model):
     collection_name = "langchain"
     Chroma(collection_name=collection_name).delete_collection()
 
@@ -54,46 +53,12 @@ def init_db(docs):
 
             metadatas = [{"document": doc} for _ in range(len(chunks))]
             vectorstore = Chroma.from_texts(
-                chunks, embedding=giga_embed, metadatas=metadatas
+                chunks, embedding=embeddings_model, metadatas=metadatas
             )
 
     print(f"Общее количество чанков в БД: {len(vectorstore.get()['ids'])}")
     return vectorstore
 
-
-def init_db_from_telegram(docs):
-    collection_name = "langchain"
-    Chroma(collection_name=collection_name).delete_collection()
-
-    for doc in docs:
-        file_path = "documents/" + doc
-        with open(file_path, "r", encoding="utf-8") as file:
-            df = pd.DataFrame(csv.DictReader(file))
-            for n in df_sh.iterrows():
-                n.RawText
-                metadatas = {
-                    "timestamp": n.Timestamp,
-                    "channel": n.TelegramChannelName,
-                    "sender": n.SenderName,
-                }
-                # content = file.read()
-
-                # splitter = RecursiveCharacterTextSplitter(
-                #   chunk_size=3000,
-                #   chunk_overlap=200,
-                #   length_function=len,
-                #   keep_separator=True
-                # )
-                # chunks = splitter.split_text(content)
-                # print(f"Количество чанков в документе {doc}: {len(chunks)}")
-
-                # metadatas = [{'document': doc} for _ in range(len(chunks))]
-                vectorstore = Chroma.from_texts(
-                    chunks, embedding=giga_embed, metadatas=metadatas
-                )
-
-    print(f"Общее количество чанков в БД: {len(vectorstore.get()['ids'])}")
-    return vectorstore
 
 
 class ProcessorState(MessagesState):
@@ -117,7 +82,7 @@ class ProcessorState(MessagesState):
     out: str  # Итоговый ответ
 
 
-def agent_dict_generator(obj_class, promt_template, retry_n=1, model=giga_no_censor):
+def agent_dict_generator(obj_class, promt_template, retry_n=1, model=None):
     @retry(stop=stop_after_attempt(retry_n))
     def agent_func(state: ProcessorState):
         parser = PydanticOutputParser(pydantic_object=obj_class)
@@ -161,7 +126,7 @@ def agent_dict_generator(obj_class, promt_template, retry_n=1, model=giga_no_cen
     return agent_func
 
 
-def agent_str_generator(attr_name, promt_template, retry_n=1, model=giga_no_censor):
+def agent_str_generator(attr_name, promt_template, retry_n=1, model=None):
     @retry(stop=stop_after_attempt(retry_n))
     def agent_func(state: ProcessorState):
         parser = StrOutputParser()
@@ -196,7 +161,7 @@ def agent_str_generator(attr_name, promt_template, retry_n=1, model=giga_no_cens
     return agent_func
 
 
-def plain_agent_generator(promt_template, retry_n=1, model=giga_no_censor):
+def plain_agent_generator(promt_template, retry_n=1, model=None):
     @retry(stop=stop_after_attempt(retry_n))
     def agent_func(**kwargs):
         parser = StrOutputParser()
